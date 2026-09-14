@@ -4,19 +4,21 @@ const { port, allowedOrigins } = require('./config');
 
 const app = express();
 
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-        return;
-      }
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+      return;
+    }
 
-      callback(new Error('Origen no permitido por CORS'));
-    },
-    credentials: true,
-  })
-);
+    callback(new Error('Origen no permitido por CORS'));
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'OPTIONS'],
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 
 const paymentController = require('./controllers/paymentController');
 app.post('/api/payments/webhook', express.raw({ type: 'application/json' }), paymentController.webhook);
@@ -29,7 +31,7 @@ app.use('/api/payments', paymentRoutes);
 const contactRoutes = require('./routes/contact');
 app.use('/api/contact', contactRoutes);
 
-app.get('/', (req, res) => res.send('Backend preparado para Stripe'));
+app.get('/', (req, res) => res.send('Backend preparado para Sumando Vidas / Por Ellos'));
 
 app.use((err, req, res, next) => {
   if (err.type === 'entity.parse.failed') {

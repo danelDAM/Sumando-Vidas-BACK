@@ -24,7 +24,7 @@ exports.createCheckoutSession = async ({ line_items = [], success_url, cancel_ur
       price_data: {
         currency: 'eur',
         product_data: { name: 'Donación Por Ellos' },
-        unit_amount: 500,
+        unit_amount: 2500,
       },
       quantity: 1,
     },
@@ -34,8 +34,8 @@ exports.createCheckoutSession = async ({ line_items = [], success_url, cancel_ur
     payment_method_types: ['card'],
     mode: 'payment',
     line_items: safeLineItems,
-    success_url: success_url || `${config.frontendUrl}/success?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: cancel_url || `${config.frontendUrl}/cancel`,
+  success_url: success_url || `${config.frontendUrl}/donaciones/exito?session_id={CHECKOUT_SESSION_ID}`,
+  cancel_url: cancel_url || `${config.frontendUrl}/donaciones/cancelado`,
   });
 
   return session;

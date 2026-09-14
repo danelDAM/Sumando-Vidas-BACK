@@ -8,12 +8,19 @@ exports.createCheckoutSession = async (req, res) => {
   }
 
   try {
-    const { line_items, success_url, cancel_url } = req.body;
+    const { line_items, success_url, cancel_url } = req.body || {};
+
+    if (!Array.isArray(line_items) || line_items.length === 0) {
+      return res.status(400).json({
+        error: 'Falta el campo line_items con al menos un elemento.',
+      });
+    }
+
     const session = await stripeService.createCheckoutSession({ line_items, success_url, cancel_url });
-    res.json({ url: session.url });
+    return res.json({ url: session.url });
   } catch (err) {
     console.error('createCheckoutSession error', err);
-    res.status(500).json({ error: 'Error creating checkout session' });
+    return res.status(500).json({ error: 'Error creating checkout session' });
   }
 };
 
@@ -25,11 +32,16 @@ exports.webhook = async (req, res) => {
   }
 
   const sig = req.headers['stripe-signature'];
+
+  if (!sig) {
+    return res.status(400).send('Missing stripe-signature header');
+  }
+
   try {
     await stripeService.handleWebhook(req.body, sig);
-    res.json({ received: true });
+    return res.json({ received: true });
   } catch (err) {
     console.error('Webhook error', err.message);
-    res.status(400).send(`Webhook Error: ${err.message}`);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 };
