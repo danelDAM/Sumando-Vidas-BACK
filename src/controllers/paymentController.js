@@ -1,6 +1,12 @@
 const stripeService = require('../services/stripeService');
+const config = require('../config');
 
 exports.createCheckoutSession = async (req, res) => {
+  if (!config.stripeConfigured) {
+    res.status(503).json({ error: 'Los pagos están temporalmente desactivados.' });
+    return;
+  }
+
   try {
     const { line_items, success_url, cancel_url } = req.body;
     const session = await stripeService.createCheckoutSession({ line_items, success_url, cancel_url });
@@ -13,6 +19,11 @@ exports.createCheckoutSession = async (req, res) => {
 
 exports.webhook = async (req, res) => {
   // req.body is raw buffer (because index.js used express.raw for this route)
+  if (!config.stripeConfigured) {
+    res.status(503).json({ error: 'El servicio de pagos está temporalmente desactivado.' });
+    return;
+  }
+
   const sig = req.headers['stripe-signature'];
   try {
     await stripeService.handleWebhook(req.body, sig);

@@ -1,14 +1,7 @@
 const dotenv = require('dotenv');
 dotenv.config();
 
-const requiredEnv = ['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET'];
-const missingEnv = requiredEnv.filter((key) => !process.env[key]);
-
-if (missingEnv.length) {
-  throw new Error(`Faltan variables de entorno: ${missingEnv.join(', ')}`);
-}
-
-const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
 const allowedOrigins = [
   ...new Set(
     (process.env.FRONTEND_URLS || frontendUrl)
@@ -22,6 +15,12 @@ module.exports = {
   port: Number(process.env.PORT || 4242),
   frontendUrl,
   allowedOrigins,
-  stripeSecretKey: process.env.STRIPE_SECRET_KEY,
-  stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
+  stripeSecretKey: process.env.STRIPE_SECRET_KEY || null,
+  stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET || null,
+  stripeConfigured: Boolean(process.env.STRIPE_SECRET_KEY && process.env.STRIPE_WEBHOOK_SECRET),
+  smtpHost: process.env.SMTP_HOST,
+  smtpPort: Number(process.env.SMTP_PORT || 587),
+  smtpUser: process.env.SMTP_USER,
+  smtpPass: process.env.SMTP_PASS,
+  smtpFrom: process.env.SMTP_FROM,
 };
