@@ -1,35 +1,28 @@
-const stripeService = require('../services/stripeService');
-const config = require('../config');
+const paymentService = require('../services/paymentService');
 
-exports.createCheckoutSession = async (req, res) => {
-  if (!config.stripeConfigured) {
-    res.status(503).json({ error: 'Los pagos están temporalmente desactivados.' });
-    return;
-  }
-
+exports.createFakePayment = async (req, res) => {
   try {
-    const { line_items, success_url, cancel_url } = req.body;
-    const session = await stripeService.createCheckoutSession({ line_items, success_url, cancel_url });
-    res.json({ url: session.url });
+    const payment = await paymentService.createFakePayment(req.body, req.get('idempotency-key'));
+    res.status(201).json(payment);
   } catch (err) {
-    console.error('createCheckoutSession error', err);
-    res.status(500).json({ error: 'Error creating checkout session' });
+    res.status(err.statusCode || 500).json({ error: err.publicMessage || 'No se pudo iniciar el pago simulado.' });
   }
 };
 
-exports.webhook = async (req, res) => {
-  // req.body is raw buffer (because index.js used express.raw for this route)
-  if (!config.stripeConfigured) {
-    res.status(503).json({ error: 'El servicio de pagos está temporalmente desactivado.' });
-    return;
-  }
-
-  const sig = req.headers['stripe-signature'];
+exports.simulateFakeMoney = async (req, res) => {
   try {
-    await stripeService.handleWebhook(req.body, sig);
-    res.json({ received: true });
+    const payment = await paymentService.simulateFakeMoney(req.params.id, req.body?.outcome);
+    res.json(payment);
   } catch (err) {
-    console.error('Webhook error', err.message);
-    res.status(400).send(`Webhook Error: ${err.message}`);
+    res.status(err.statusCode || 500).json({ error: err.publicMessage || 'No se pudo actualizar el pago simulado.' });
+  }
+};
+
+exports.getPaymentStatus = async (req, res) => {
+  try {
+    const payment = await paymentService.getPaymentStatus(req.params.id);
+    res.json(payment);
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ error: err.publicMessage || 'No se pudo consultar el estado del pago.' });
   }
 };

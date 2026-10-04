@@ -1,7 +1,7 @@
 {
   "name": "por-ellos-backend",
   "version": "0.1.0",
-  "description": "Backend base para integrar Stripe (Checkout + Webhooks)",
+  "description": "Backend Express para FakeMoney de desarrollo y persistencia Supabase",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
@@ -9,11 +9,11 @@
     "test": "node --test"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.117.2",
     "cors": "^2.8.5",
     "dotenv": "^16.0.0",
     "express": "^4.18.2",
-    "nodemailer": "^10.0.13",
-    "stripe": "^12.0.0"
+    "nodemailer": "^10.0.13"
   },
   "devDependencies": {
     "nodemon": "^2.0.22"

@@ -3,8 +3,6 @@ const assert = require('node:assert/strict');
 const { spawnSync } = require('node:child_process');
 const path = require('node:path');
 
-process.env.STRIPE_SECRET_KEY ||= 'sk_test_contact_tests';
-process.env.STRIPE_WEBHOOK_SECRET ||= 'whsec_contact_tests';
 process.env.FRONTEND_URLS = 'http://localhost:5173';
 process.env.SMTP_HOST ||= 'smtp.example.test';
 process.env.SMTP_PORT ||= '587';
@@ -157,24 +155,24 @@ test('returns a JSON 400 error for malformed JSON', async () => {
   });
 });
 
-test('starts the application without Stripe credentials', () => {
+test('starts the application without payment provider credentials', () => {
   const result = spawnSync(process.execPath, ['-e', "require('./src/index')"], {
     cwd: path.resolve(__dirname, '..'),
     encoding: 'utf8',
     env: {
       ...process.env,
-      STRIPE_SECRET_KEY: '',
-      STRIPE_WEBHOOK_SECRET: '',
+      SUPABASE_URL: '',
+      SUPABASE_SERVICE_ROLE_KEY: '',
     },
   });
 
   assert.equal(result.status, 0, result.stderr);
 });
 
-test('returns 503 for payment endpoints while Stripe is unconfigured', async () => {
+test('returns 503 when FakeMoney is not explicitly enabled', async () => {
   const config = require('../src/config');
-  const previousStatus = config.stripeConfigured;
-  config.stripeConfigured = false;
+  const previousStatus = config.fakeMoneyEnabled;
+  config.fakeMoneyEnabled = false;
 
   try {
     const checkoutResponse = await fetch(`${baseUrl}/api/payments/create-checkout-session`, {
@@ -182,21 +180,12 @@ test('returns 503 for payment endpoints while Stripe is unconfigured', async () 
       headers: { 'content-type': 'application/json' },
       body: '{}',
     });
-    const webhookResponse = await fetch(`${baseUrl}/api/payments/webhook`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: '{}',
-    });
 
     assert.equal(checkoutResponse.status, 503);
     assert.deepEqual(await checkoutResponse.json(), {
-      error: 'Los pagos están temporalmente desactivados.',
-    });
-    assert.equal(webhookResponse.status, 503);
-    assert.deepEqual(await webhookResponse.json(), {
-      error: 'El servicio de pagos está temporalmente desactivado.',
+      error: 'FakeMoney solo está disponible en desarrollo y debe habilitarse explícitamente.',
     });
   } finally {
-    config.stripeConfigured = previousStatus;
+    config.fakeMoneyEnabled = previousStatus;
   }
 });

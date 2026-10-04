@@ -1,43 +1,76 @@
 # Backend - Sumando Vidas
 
-Pasos rápidos:
+Backend Express para contacto y pagos de desarrollo con FakeMoney. FakeMoney no realiza cobros ni llama a proveedores externos. Stripe no forma parte de este flujo.
 
-1. Copia `.env.example` a `.env` y configura SMTP y CORS. Stripe es opcional hasta que tengas una cuenta.
-2. Instala dependencias: `npm install`.
-3. Arranca en modo desarrollo: `npm run dev`.
+La estrategia de ramas Git y la separación DEV/Production de Supabase están documentadas en [docs/ENVIRONMENTS.md](docs/ENVIRONMENTS.md).
 
-Variables recomendadas:
+## Configuración
 
-- `PORT=4242`
-- `STRIPE_SECRET_KEY=...` - Opcional mientras los pagos estén desactivados.
-- `STRIPE_WEBHOOK_SECRET=...` - Opcional mientras los pagos estén desactivados.
-- `FRONTEND_URL=http://localhost:5173` - Origen usado para las URLs de retorno de Stripe.
-- `FRONTEND_URLS=http://localhost:5173` - Lista de orígenes CORS permitidos, separados por comas.
-- `SMTP_HOST=...` - Servidor SMTP del proveedor de correo.
-- `SMTP_PORT=587` - Puerto SMTP; se usa TLS implícito automáticamente en el puerto 465.
-- `SMTP_USER=...` y `SMTP_PASS=...` - Credenciales SMTP, solo en el backend.
-- `SMTP_FROM=...` - Dirección autorizada por el proveedor para enviar correo.
+1. En desarrollo, configura `.env` con la URL y una clave `sb_secret_...` propia de `SumandoVidas-Dev` (`lneaejwtcffridriuwpp`). Nunca copies la clave de Production a DEV.
+2. FakeMoney requiere `NODE_ENV=development`, una clave de servidor válida y `FAKE_MONEY_ENABLED=true`. Si falta configuración responde `503`; en producción siempre está deshabilitado.
+3. Instala e inicia el backend con `npm install` y `npm run dev` (puerto `4242` por defecto).
 
-Para desarrollo local, incluye `http://localhost:5173` en `FRONTEND_URLS`. Al desplegar el frontend, añade su origen real a esa lista, separado por una coma; no uses una URL con ruta. No se presupone ningún dominio de producción. Mantén `SMTP_PASS` y las claves de Stripe únicamente en el `.env` del backend y no las publiques ni las incluyas en el frontend.
+Las variables `VITE_SUPABASE_URL` y `VITE_SUPABASE_PUBLISHABLE_KEY` son de cliente y Vite solo las carga desde el `.env` del proyecto frontend. Este workspace contiene únicamente el backend; añadirlas al `.env` de aquí no configura el frontend.
 
-Stripe permanece desactivado si falta cualquiera de sus dos variables: el backend puede arrancar y el contacto sigue disponible, pero los endpoints de pagos responden `503`. Cuando tengas cuenta, rellena ambas variables con credenciales válidas y reinicia el backend para activar el flujo ya preparado.
+Variables relevantes:
 
-Endpoints principales:
+- `FAKE_MONEY_ENABLED=true` - Habilitación explícita; solo funciona fuera de producción.
+- `SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY` - Acceso del backend a Supabase. Todas las escrituras en `public.donations` se realizan desde el servidor.
+- `FRONTEND_URLS=http://localhost:5173` - Orígenes CORS permitidos, separados por comas.
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` y `SMTP_FROM` - Configuración del formulario de contacto.
 
-- `POST /api/payments/create-checkout-session` - Cuerpo: `{ line_items, success_url, cancel_url }`.
-- `POST /api/payments/webhook` - Webhook de Stripe con body raw JSON.
-- `POST /api/contact` - Cuerpo: `{ name, email, reason, message }`; `reason` admite `general`, `volunteer`, `company`, `project` o `press`. Envía el mensaje a `associacionsumandovida@gmail.com`.
+El esquema inicial, las semillas, el leaderboard de ciudades y la migración FakeMoney están aplicados en DEV. La migración aditiva FakeMoney también se aplicó a Production con autorización explícita; no uses Production para nuevas pruebas simuladas. Los archivos fuente están en `supabase/migrations` del repositorio frontend. Todas las escrituras del backend usan exclusivamente `SUPABASE_SERVICE_ROLE_KEY`; `VITE_SUPABASE_PUBLISHABLE_KEY` no sirve para escribir.
 
-Notas:
+## Flujo FakeMoney
 
-- Usa `stripe listen --forward-to localhost:4242/api/payments/webhook` para probar webhooks localmente.
-- El webhook ya valida la firma y responde a los eventos principales de checkout.
-- Si quieres personalizar el flujo de pago, solo tienes que ajustar `line_items` y las URLs de retorno.
-- Ejecuta `npm test` para validar el endpoint de contacto. Las pruebas simulan el proveedor SMTP y no envían correos reales.
+El cliente genera un UUID nuevo por intento de pago y lo conserva para reintentar exactamente esa operación. Puede enviarlo en el header `Idempotency-Key`.
 
-## Prueba local del formulario
+`POST /api/payments/create-checkout-session` crea una fila `pending`. Los IDs son UUIDs estables de Supabase, no nombres de campaña o ciudad. Para una donación:
 
-1. Completa en `.env` las credenciales SMTP de una cuenta/proveedor autorizado y configura `SMTP_FROM` con una dirección permitida por ese proveedor.
-2. Asegura que `FRONTEND_URLS` incluye `http://localhost:5173` y arranca el backend con `npm run dev` (puerto `4242` por defecto).
-3. Arranca el frontend Vite con `npm run dev` en su repositorio y envía el formulario de contacto. Su servicio usa `http://localhost:4242` de forma predeterminada.
-4. Comprueba que el correo llega al destinatario y que responder al mensaje usa el email indicado en el formulario.
+```json
+{
+	"campaignId": "UUID-de-campaigns",
+	"campaignStopId": "UUID-de-campaign-stops",
+	"amount": 12.5,
+	"currency": "EUR",
+	"donor": { "name": "Nombre", "email": "persona@example.com" }
+}
+```
+
+Para un producto, envía `productId`; el backend obtiene precio y moneda de `public.products`. Si se incluye `amount`, debe coincidir con el precio persistido. `campaignStopId` y `participantId` son opcionales, pero se validan en el servidor. Un participante sin consentimiento público válido no queda ligado a la donación ni aparece en los rankings personales. No se crea ningún participante automáticamente.
+
+La respuesta incluye `donationId`, `status`, `statusUrl` y `simulationUrl`. FakeMoney no redirige a una pasarela: en desarrollo se simula el resultado explícitamente:
+
+```json
+POST /api/payments/{donationId}/fake-money
+{ "outcome": "approved" }
+```
+
+`outcome` admite `approved`, `cancelled` o `failed`. `approved` transiciona `pending` a `paid` y asigna `paid_at`; repetir la misma aprobación es idempotente. Los estados finales no se pueden cambiar. El estado confirmado se obtiene con `GET /api/payments/{donationId}`; una URL de retorno del navegador no confirma ningún pago.
+
+Ejemplo local:
+
+```powershell
+$key = [guid]::NewGuid().ToString()
+$start = Invoke-RestMethod -Method Post -Uri http://localhost:4242/api/payments/create-checkout-session -Headers @{ 'Idempotency-Key' = $key } -ContentType 'application/json' -Body '{"campaignId":"UUID-de-campaigns","amount":12.5,"currency":"EUR"}'
+Invoke-RestMethod -Method Post -Uri "http://localhost:4242$($start.simulationUrl)" -ContentType 'application/json' -Body '{"outcome":"approved"}'
+Invoke-RestMethod -Method Get -Uri "http://localhost:4242$($start.statusUrl)"
+```
+
+Sustituye los UUID de ejemplo por IDs existentes en la base de desarrollo. Cambia el resultado por `cancelled` o `failed` para probar esos estados.
+
+## Integración del frontend
+
+El frontend vive en el repositorio hermano `Por ellos web`. Sus servicios usan `VITE_API_URL` o `http://localhost:4242` como endpoint base y las variables `VITE_SUPABASE_*` de ese repo apuntan a DEV durante desarrollo. El flujo manda IDs estables y una clave `Idempotency-Key`; la simulación está disponible solo en desarrollo. `DonationStatusPage` consulta el estado en el backend y muestra éxito únicamente al recibir `paid`.
+
+Después de verificar `paid`, invalida y vuelve a solicitar los leaderboards en `src/services/publicData.ts` (mensual, histórico y ciudades). Las vistas leen las donaciones `paid`; no mantengas contadores duplicados en el backend.
+
+## Contacto y pruebas
+
+`POST /api/contact` acepta `{ name, email, reason, message }`; `reason` admite `general`, `volunteer`, `company`, `project` o `press` y envía el mensaje a `associacionsumandovida@gmail.com`.
+
+Ejecuta `npm test`. Las pruebas de pagos usan un repositorio en memoria y no escriben en Supabase. Este backend CommonJS no necesita compilación y no define un script `build`.
+
+## Ramas y CI
+
+Usa `develop` para integrar y probar cambios en Supabase DEV; `main` corresponde a Production. Crea ramas `feature/<tema>` desde `develop` y promueve los cambios mediante PR de `feature/*` a `develop`, y luego de `develop` a `main`. Los workflows de GitHub ejecutan `npm test` en PRs/pushes a ambas ramas una vez que se publiquen. La guía completa, incluidos los identificadores de proyectos, las variables por entorno y el orden de migraciones, está en [docs/ENVIRONMENTS.md](docs/ENVIRONMENTS.md).
