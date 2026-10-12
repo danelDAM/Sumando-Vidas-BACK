@@ -22,10 +22,6 @@ function validId(value) {
   return typeof value === 'string' && uuidPattern.test(value);
 }
 
-function participantHasPublicConsent(participant) {
-  return participant.publicly_listed === true && Boolean(participant.public_consent_at);
-}
-
 function participantIsActive(participant) {
   return participant.status === 'active';
 }
@@ -58,7 +54,7 @@ function checkoutResponse(donation) {
 }
 
 function matchesIdempotentRequest(donation, candidate) {
-  return [
+  const fieldsMatch = [
     'campaign_id',
     'campaign_stop_id',
     'product_id',
@@ -70,6 +66,68 @@ function matchesIdempotentRequest(donation, candidate) {
     'donor_email',
   ]
     .every((field) => (donation[field] ?? null) === (candidate[field] ?? null));
+  return fieldsMatch
+    && JSON.stringify(donation.metadata?.participant_intent ?? null)
+      === JSON.stringify(candidate.metadata?.participant_intent ?? null);
+}
+
+function readAliasedValue(body, camelCaseKey, snakeCaseKey) {
+  const camelCaseValue = body[camelCaseKey];
+  const snakeCaseValue = body[snakeCaseKey];
+  if (camelCaseValue !== undefined && snakeCaseValue !== undefined && camelCaseValue !== snakeCaseValue) {
+    fail(400, `Los campos ${camelCaseKey} y ${snakeCaseKey} no coinciden.`);
+  }
+  return camelCaseValue !== undefined ? camelCaseValue : snakeCaseValue;
+}
+
+function participantIntent(donation) {
+  return donation.metadata?.participant_intent || null;
+}
+
+async function createPrivateParticipant(donation, intent) {
+  const requestedParticipantId = donation.participant_id || intent.participant_id;
+  if (requestedParticipantId) {
+    const participant = await getRecord('findParticipant', requestedParticipantId, 'participante');
+    if (!participantIsActive(participant)) fail(409, 'El participante no está activo.');
+    return participant;
+  }
+
+  return repository.createParticipant({
+    participant_type: intent.participant_type,
+    display_name: intent.display_name,
+    email: donation.donor_email || null,
+    publicly_listed: false,
+    public_consent_at: null,
+    status: 'active',
+  });
+}
+
+async function publishPaidParticipant(donation) {
+  const intent = participantIntent(donation);
+  if (!intent || intent.is_anonymous) return donation;
+
+  let participantId = donation.participant_id || intent.participant_id;
+  if (!participantId) {
+    const participant = await createPrivateParticipant(donation, intent);
+    participantId = participant.id;
+    const attached = await repository.attachParticipantToPaidDonation(donation.id, participantId);
+    if (!attached) {
+      const latest = await repository.findDonation(donation.id);
+      if (!latest?.participant_id) fail(409, 'No se pudo asociar el participante a la donación pagada.');
+      participantId = latest.participant_id;
+      donation = latest;
+    } else {
+      donation = attached;
+    }
+  }
+
+  const profile = await repository.publishParticipant(participantId, {
+    participant_type: intent.participant_type,
+    display_name: intent.display_name,
+    public_consent_at: new Date().toISOString(),
+  });
+  if (!profile) fail(409, 'No se pudo activar la visibilidad pública del participante.');
+  return donation;
 }
 
 exports.createFakePayment = async (body, headerKey) => {
@@ -134,38 +192,68 @@ exports.createFakePayment = async (body, headerKey) => {
   }
 
   const donor = body.donor && typeof body.donor === 'object' && !Array.isArray(body.donor) ? body.donor : {};
-  const donorName = typeof donor.name === 'string' ? donor.name.trim() : null;
+  const requestedAnonymous = readAliasedValue(body, 'isAnonymous', 'is_anonymous');
+  const isAnonymous = requestedAnonymous === undefined ? true : requestedAnonymous;
+  if (typeof isAnonymous !== 'boolean') fail(400, 'isAnonymous debe ser true o false.');
+
+  const requestedParticipantType = readAliasedValue(body, 'participantType', 'participant_type');
+  const requestedDisplayName = readAliasedValue(body, 'donorName', 'donor_name');
+  const rawDisplayName = requestedDisplayName ?? donor.name;
+  let displayName = typeof rawDisplayName === 'string' ? rawDisplayName.trim() : '';
   const donorEmail = typeof donor.email === 'string' ? donor.email.trim().toLowerCase() : null;
   if (donor.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(donorEmail)) fail(400, 'El email del donante no es válido.');
 
-  let participantId = null;
-  if (body.participantId) {
-    const participant = await getRecord('findParticipant', body.participantId, 'participante');
-    if (!participantIsActive(participant)) fail(400, 'El participante no está activo.');
-    if (participantHasPublicConsent(participant)) participantId = participant.id;
-  } else if (body.participantId !== undefined && body.participantId !== null) {
+  const requestedParticipantId = body.participantId;
+  if (requestedParticipantId !== undefined && requestedParticipantId !== null && !validId(requestedParticipantId)) {
     fail(400, 'El identificador de participante no es válido.');
   }
+
+  let participantType = requestedParticipantType;
+  let existingParticipant = null;
+  if (!isAnonymous && requestedParticipantId) {
+    existingParticipant = await getRecord('findParticipant', requestedParticipantId, 'participante');
+    if (!participantIsActive(existingParticipant)) fail(400, 'El participante no está activo.');
+    participantType = participantType || existingParticipant.participant_type;
+    displayName = displayName || existingParticipant.display_name;
+  }
+
+  if (!isAnonymous) {
+    if (!['person', 'company'].includes(participantType)) {
+      fail(400, 'participantType debe ser person o company para una donación pública.');
+    }
+    if (!displayName) fail(400, 'Se requiere donorName para una donación pública.');
+  }
+
+  const donationDisplayName = requestedDisplayName !== undefined
+    ? (typeof requestedDisplayName === 'string' ? requestedDisplayName.trim() : '')
+    : (typeof donor.name === 'string' ? donor.name.trim() : '');
+  const publicIntent = {
+    is_anonymous: isAnonymous,
+    participant_type: isAnonymous ? null : participantType,
+    display_name: isAnonymous ? null : displayName,
+    participant_id: isAnonymous ? null : (existingParticipant?.id || null),
+  };
 
   const paymentReference = `fm_${randomUUID()}`;
   const donationData = {
     campaign_id: campaignId,
     campaign_stop_id: campaignStopId,
     product_id: product?.id || null,
-    participant_id: participantId,
+    participant_id: null,
     donation_type: product ? 'product' : 'one_time',
     amount,
     currency,
     status: 'pending',
     idempotency_key: idempotencyKey,
-    donor_name: donorName || null,
+    donor_name: donationDisplayName || null,
     donor_email: donorEmail || null,
     payment_provider: 'fake_money',
     payment_reference: paymentReference,
     metadata: {
       fake_money: true,
       fake_money_environment: config.nodeEnv,
-      public_participant_consent: Boolean(participantId),
+      public_participant_consent: !isAnonymous,
+      participant_intent: publicIntent,
     },
   };
 
@@ -198,19 +286,28 @@ exports.simulateFakeMoney = async (id, outcome) => {
   if (!validOutcomes.has(outcome)) fail(400, 'El resultado debe ser approved, cancelled o failed.');
 
   const targetStatus = outcome === 'approved' ? 'paid' : outcome;
-  if (donation.status === targetStatus) return paymentStatus(donation);
+  if (donation.status === targetStatus) {
+    const consistentDonation = targetStatus === 'paid' ? await publishPaidParticipant(donation) : donation;
+    return paymentStatus(consistentDonation);
+  }
   if (donation.status !== 'pending') fail(409, 'No se puede cambiar el estado final de esta donación.');
 
+  const intent = participantIntent(donation);
+  const participant = outcome === 'approved' && intent && !intent.is_anonymous
+    ? await createPrivateParticipant(donation, intent)
+    : null;
   const updates = {
     status: targetStatus,
     paid_at: targetStatus === 'paid' ? new Date().toISOString() : null,
     metadata: { ...donation.metadata, fake_money_outcome: outcome },
   };
+  if (intent) updates.participant_id = participant?.id || null;
   let updated = await repository.updatePendingDonation(id, updates);
   if (!updated) {
     updated = await repository.findDonation(id);
     if (updated?.status !== targetStatus) fail(409, 'La donación cambió de estado y no puede actualizarse.');
   }
+  if (targetStatus === 'paid') updated = await publishPaidParticipant(updated);
   return paymentStatus(updated);
 };
 

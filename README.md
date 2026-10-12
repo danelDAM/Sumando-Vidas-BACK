@@ -16,7 +16,8 @@ Variables relevantes:
 
 - `FAKE_MONEY_ENABLED=true` - Habilitación explícita; solo funciona fuera de producción.
 - `SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY` - Acceso del backend a Supabase. Todas las escrituras en `public.donations` se realizan desde el servidor.
-- `FRONTEND_URLS=http://localhost:5173` - Orígenes CORS permitidos, separados por comas.
+- `PORT` (por defecto `4242`) y `NODE_ENV` (por defecto `development`).
+- `FRONTEND_URLS=http://localhost:5173` - Orígenes CORS permitidos, separados por comas. Si no se define, se usa `FRONTEND_URL` (por defecto `http://localhost:5173`).
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` y `SMTP_FROM` - Configuración del formulario de contacto.
 
 El esquema inicial, las semillas, el leaderboard de ciudades y la migración FakeMoney están aplicados en DEV. La migración aditiva FakeMoney también se aplicó a Production con autorización explícita; no uses Production para nuevas pruebas simuladas. Los archivos fuente están en `supabase/migrations` del repositorio frontend. Todas las escrituras del backend usan exclusivamente `SUPABASE_SERVICE_ROLE_KEY`; `VITE_SUPABASE_PUBLISHABLE_KEY` no sirve para escribir.
@@ -37,7 +38,9 @@ El cliente genera un UUID nuevo por intento de pago y lo conserva para reintenta
 }
 ```
 
-Para un producto, envía `productId`; el backend obtiene precio y moneda de `public.products`. Si se incluye `amount`, debe coincidir con el precio persistido. `campaignStopId` y `participantId` son opcionales, pero se validan en el servidor. Un participante sin consentimiento público válido no queda ligado a la donación ni aparece en los rankings personales. No se crea ningún participante automáticamente.
+Para un producto, envía `productId`; el backend obtiene precio y moneda de `public.products`. Si se incluye `amount`, debe coincidir con el precio persistido. `campaignStopId` y `participantId` son opcionales, pero se validan en el servidor.
+
+Por defecto la donación es anónima: no se liga ni se crea ningún participante y no aparece en los rankings personales. Para aparecer públicamente, envía `"isAnonymous": false`, `"participantType": "person" | "company"` y `"donorName"` (también se aceptan `is_anonymous`, `participant_type` y `donor_name`; si llegan ambas formas deben coincidir). Esa intención se guarda en `metadata.participant_intent` y forma parte de la comprobación de idempotencia. Solo cuando la simulación es `approved` el servidor crea el participante (o reutiliza el `participantId` activo indicado), lo liga a la donación y lo publica con `publicly_listed=true` y `public_consent_at`. Las donaciones `cancelled` o `failed` nunca crean ni publican participantes.
 
 La respuesta incluye `donationId`, `status`, `statusUrl` y `simulationUrl`. FakeMoney no redirige a una pasarela: en desarrollo se simula el resultado explícitamente:
 
@@ -73,4 +76,4 @@ Ejecuta `npm test`. Las pruebas de pagos usan un repositorio en memoria y no esc
 
 ## Ramas y CI
 
-Usa `develop` para integrar y probar cambios en Supabase DEV; `main` corresponde a Production. Crea ramas `feature/<tema>` desde `develop` y promueve los cambios mediante PR de `feature/*` a `develop`, y luego de `develop` a `main`. Los workflows de GitHub ejecutan `npm test` en PRs/pushes a ambas ramas una vez que se publiquen. La guía completa, incluidos los identificadores de proyectos, las variables por entorno y el orden de migraciones, está en [docs/ENVIRONMENTS.md](docs/ENVIRONMENTS.md).
+Usa `develop` para integrar y probar cambios en Supabase DEV; `main` corresponde a Production. Crea ramas `feature/<tema>` desde `develop` y promueve los cambios mediante PR de `feature/*` a `develop`, y luego de `develop` a `main`. Los workflows de GitHub ejecutan `npm test` en PRs/pushes a ambas ramas. La guía completa, incluidos los identificadores de proyectos, las variables por entorno y el orden de migraciones, está en [docs/ENVIRONMENTS.md](docs/ENVIRONMENTS.md).

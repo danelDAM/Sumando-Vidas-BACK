@@ -10,7 +10,7 @@ Los dos repositorios comparten el mismo flujo de ramas:
 | `main` | Código que se despliega a producción | `SumandoVidasDB` (`hhapfybsavgenvfqyeyq`) |
 | `feature/<tema>` | Trabajo aislado; se crea desde `develop` y se integra mediante PR | Sin acceso a una base propia; se prueba en DEV tras integrar |
 
-Las ramas `develop` ya están publicadas en ambos repositorios. Los cambios de trabajo locales continúan sin commit: crear una rama no publica ni commitea esos cambios. `main` se mantiene como la rama de producción; no desarrolles directamente sobre ella.
+Las ramas `develop` están publicadas en ambos repositorios. `main` se mantiene como la rama de producción; no desarrolles directamente sobre ella.
 
 La organización Supabase está en el plan Free y no tiene branching/preview databases habilitado. Por eso se creó un proyecto Supabase DEV separado en vez de simular una rama de base de datos. El proyecto de producción existente no se renombró ni se clonó.
 
@@ -23,7 +23,7 @@ La organización Supabase está en el plan Free y no tiene branching/preview dat
 5. Cuando esté validado, abre un PR de `develop` hacia `main`. Revisa manualmente cada migración y las variables del despliegue de producción.
 6. Tras aprobar y desplegar `main`, aplica las migraciones pendientes en `SumandoVidasDB`. Nunca copies registros de donaciones de DEV a producción.
 
-Los dos repositorios incluyen workflows de CI para ejecutar al hacer push o abrir PR contra `develop`/`main`: `npm test` para backend y `npm run build` para frontend. Estos workflows están en los cambios locales y empezarán a ejecutarse en GitHub cuando se commiteen y publiquen. Configura protección de ramas en GitHub para exigir PR y el check correspondiente (`Backend CI / test` o `Frontend CI / build`) antes de integrar en `main`; las reglas remotas no se configuraron porque requieren permisos de administración.
+Los dos repositorios incluyen workflows de CI para ejecutar al hacer push o abrir PR contra `develop`/`main`: `npm test` para backend y `npm run build` para frontend. Configura protección de ramas en GitHub para exigir PR y el check correspondiente (`Backend CI / test` o `Frontend CI / build`) antes de integrar en `main`; las reglas remotas no se configuraron porque requieren permisos de administración.
 
 ## Bases Supabase
 
@@ -44,7 +44,7 @@ SUPABASE_URL=https://lneaejwtcffridriuwpp.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=sb_secret_<clave-del-proyecto-DEV>
 ```
 
-La URL DEV está configurada localmente. La clave de servicio quedó vacía intencionalmente al quitar del `.env` la secret que apuntaba a Production. Genera/copia una secret propia de DEV desde **SumandoVidas-Dev → Project Settings → API Keys** y pégala directamente en el `.env` local, sin compartirla en chat. Hasta configurarla, deja `FAKE_MONEY_ENABLED=false`. Reinicia `npm run dev` después de cambiar `.env`.
+La secret de DEV se obtiene en **SumandoVidas-Dev → Project Settings → API Keys** y se pega directamente en el `.env` local, sin compartirla en chat. Sin una secret válida, deja `FAKE_MONEY_ENABLED=false`. Reinicia `npm run dev` después de cambiar `.env`.
 
 Frontend, `.env.local` del repo frontend:
 
@@ -60,7 +60,7 @@ Producción requiere variables configuradas en el entorno de despliegue, no en a
 
 ## Migraciones y datos
 
-- Mantén el esquema bajo `POR ELLOSO/Por ellos web/supabase/migrations` y aplica las migraciones en orden a DEV primero.
+- Mantén el esquema bajo `Por ellos web/supabase/migrations` y aplica las migraciones en orden a DEV primero.
 - Usa SQL aditivo y reversible cuando sea viable. No borres tablas ni donaciones existentes.
 - Tras validar el código y migración en DEV, promuévela a Production mediante PR/revisión y una aplicación controlada.
 - Los leaderboards se derivan de `donations` pagadas; no guardes totales duplicados. FakeMoney sin IDs válidos de campaña/parada/participante queda fuera de las clasificaciones correspondientes.
@@ -68,4 +68,4 @@ Producción requiere variables configuradas en el entorno de despliegue, no en a
 
 ## Estado de la configuración
 
-`SumandoVidas-Dev` es el destino de trabajo y tiene esquema/semillas cargados. Las ramas `develop` existen en ambos remotos, pero los cambios locales no se han commiteado. El `.env` del backend apunta a DEV y no contiene una secret válida aún; FakeMoney permanece apagado hasta que pegues la secret DEV. El proyecto Production no se usa desde los `.env` locales.
+`SumandoVidas-Dev` es el destino de trabajo y tiene esquema/semillas cargados. Las ramas `develop` existen en ambos remotos. El `.env` del backend apunta a DEV con su propia secret y FakeMoney habilitado para desarrollo local. El proyecto Production no se usa desde los `.env` locales.

@@ -1,6 +1,6 @@
 # Backend Agent Instructions
 
-These instructions apply to this Express backend only. Keep changes focused on this repository; the Vite frontend is maintained in the sibling `../POR ELLOSO/Por ellos web` repository.
+These instructions apply to this Express backend only. Keep changes focused on this repository; the Vite frontend is maintained in the sibling `../Por ellos web` repository.
 
 ## Project Conventions
 
@@ -25,7 +25,8 @@ These instructions apply to this Express backend only. Keep changes focused on t
 - Never accept a client-declared `paid` status, trust a client product price, or write to `donations` from the browser. A successful simulation must set `status='paid'` and `paid_at` on the server.
 - Use stable UUID relationships (`campaign_id`, `campaign_stop_id`, `product_id`, `participant_id`); never persist a city or campaign name as a relation.
 - Validate campaigns as active, stops as published and belonging to that campaign, and products as active and published. Product amount and currency come from `public.products.price_amount` and `currency`, not from the request.
-- Link a participant only when its status is active and both `publicly_listed` and `public_consent_at` indicate valid public consent. Otherwise keep the donation anonymous; never invent participants.
+- Donations are anonymous by default (`isAnonymous` omitted or `true`): no participant is linked or created. A public donation requires `isAnonymous=false`, `participantType` (`person` or `company`) and `donorName`; camelCase and snake_case aliases (`is_anonymous`, `participant_type`, `donor_name`) must agree. The request stores this choice in `metadata.participant_intent` and idempotency compares it too.
+- Participants are created, linked and published (`publicly_listed=true`, `public_consent_at=now`) only when a public-intent donation reaches `paid`. A supplied `participantId` must be active. `cancelled`/`failed` never create or publish participants. Do not create participants from any other path.
 - Mark simulator records with `payment_provider='fake_money'`, a unique `payment_reference`, and `metadata.fake_money=true` so development records are traceable. Do not record FakeMoney activity in `stripe_webhook_events` or claim that Stripe is implemented.
 
 ## Supabase Safety

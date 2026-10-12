@@ -32,6 +32,24 @@ exports.findProduct = (id) => findById('products', id);
 exports.findParticipant = (id) => findById('participants', id);
 exports.findDonation = (id) => findById('donations', id);
 
+exports.createParticipant = async (participant) => {
+  const { data, error } = await getSupabase().from('participants').insert(participant).select('*').single();
+  if (error) throw error;
+  return data;
+};
+
+exports.publishParticipant = async (id, profile) => {
+  const { data, error } = await getSupabase()
+    .from('participants')
+    .update({ ...profile, publicly_listed: true })
+    .eq('id', id)
+    .eq('status', 'active')
+    .select('*')
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+};
+
 exports.findDonationByIdempotencyKey = async (key) => {
   const { data, error } = await getSupabase()
     .from('donations')
@@ -54,6 +72,19 @@ exports.updatePendingDonation = async (id, updates) => {
     .update(updates)
     .eq('id', id)
     .eq('status', 'pending')
+    .select('*')
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+};
+
+exports.attachParticipantToPaidDonation = async (id, participantId) => {
+  const { data, error } = await getSupabase()
+    .from('donations')
+    .update({ participant_id: participantId })
+    .eq('id', id)
+    .eq('status', 'paid')
+    .is('participant_id', null)
     .select('*')
     .maybeSingle();
   if (error) throw error;
